@@ -1,121 +1,79 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import React, { useEffect, useState } from 'react'
+import { io } from 'socket.io-client'
 import './App.css'
 
+// Connect to backend server on port 5000
+const socket = io('http://localhost:5000')
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [logs, setLogs] = useState([])
+  const [sender, setSender] = useState('+919876543210')
+  const [message, setMessage] = useState('Pay 5000 via UPI scammer@okicici or face arrest')
+
+  useEffect(() => {
+    // Listen for events from backend
+    socket.on('message-received', (data) => {
+      setLogs((prev) => [...prev, `[RECEIVED]: ${JSON.stringify(data)}`])
+    })
+
+    socket.on('ai-reply-generated', (data) => {
+      setLogs((prev) => [...prev, `[AI BAIT]: ${JSON.stringify(data)}`])
+    })
+
+    socket.on('intel-extracted', (data) => {
+      setLogs((prev) => [...prev, `[INTEL VAULT]: ${JSON.stringify(data)}`])
+    })
+
+    return () => {
+      socket.off('message-received')
+      socket.off('ai-reply-generated')
+      socket.off('intel-extracted')
+    }
+  }, [])
+
+  const handleDetonate = async () => {
+    await fetch('http://localhost:5000/api/detonate-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender, message })
+    })
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+    <div style={{ padding: '30px', fontFamily: 'sans-serif', maxWidth: '800px', margin: '0 auto' }}>
+      <h1>ScamBox AI Detonation Dashboard</h1>
+      
+      <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <input 
+          type="text" 
+          value={sender} 
+          onChange={(e) => setSender(e.target.value)}
+          placeholder="Sender Phone Number"
+          style={{ padding: '8px' }}
+        />
+        <textarea 
+          value={message} 
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Scam Message"
+          rows="3"
+          style={{ padding: '8px' }}
+        />
+        <button 
+          onClick={handleDetonate} 
+          style={{ padding: '12px', background: '#d9534f', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
         >
-          Count is {count}
+          Detonate Message
         </button>
-      </section>
+      </div>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <h3>Live Execution Feed</h3>
+      <div style={{ background: '#111', color: '#00ff00', padding: '15px', borderRadius: '6px', minHeight: '200px', fontFamily: 'monospace' }}>
+        {logs.length === 0 ? <p style={{ color: '#666' }}>Awaiting message detonation...</p> : null}
+        {logs.map((log, index) => (
+          <div key={index} style={{ marginBottom: '8px' }}>{log}</div>
+        ))}
+      </div>
+    </div>
   )
 }
 
