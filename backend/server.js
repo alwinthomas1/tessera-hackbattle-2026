@@ -11,7 +11,8 @@
  *   4. REST endpoints that orchestrate Member 2 (AI agent) and
  *      Member 4 (inspector/dossier) modules
  *   5. Graceful fallback mocks if agent.js / inspector.js / dossier.js
- *      don't exist yet, so the whole team can integrate incrementally.
+ *      don't exist, or export only SOME functions, so the team can
+ *      integrate incrementally without crashing the server.
  * ------------------------------------------------------------------
  */
 
@@ -24,66 +25,74 @@ const { Server } = require('socket.io');
 const crypto = require('crypto');
 
 // ---------------------------------------------------------------------------
-// 1. Attempt to import Member 2's AI Agent module.
-//    Expected exports: classifyScam(text), generateBaitResponse(history),
-//    extractThreatIntel(history)
+// 1. Mock fallback functions (defined up front, used per-function as needed)
 // ---------------------------------------------------------------------------
-let classifyScam, generateBaitResponse, extractThreatIntel;
+const mockClassifyScam = async (text) => {
+  const lower = (text || '').toLowerCase();
+  const suspiciousKeywords = ['upi', 'urgent', 'arrest', 'otp', 'bank', 'kyc', 'lottery', 'prize'];
+  const hits = suspiciousKeywords.filter((k) => lower.includes(k));
+  return {
+    isScam: hits.length > 0,
+    confidence: Math.min(0.4 + hits.length * 0.15, 0.95),
+    matchedKeywords: hits,
+  };
+};
 
+const mockGenerateBaitResponse = async (history) => {
+  const lastMsg = Array.isArray(history) && history.length > 0
+    ? history[history.length - 1].message
+    : '';
+  return `[MOCK BAIT REPLY] Oh no, that sounds serious! I don't understand — can you tell me exactly how to pay? (echoing: "${lastMsg}")`;
+};
+
+const mockExtractThreatIntel = async (history) => {
+  const fullText = Array.isArray(history)
+    ? history.map((h) => h.message).join(' ')
+    : String(history || '');
+
+  const upiMatch = fullText.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g);
+  const urlMatch = fullText.match(/https?:\/\/[^\s]+/g);
+  const phoneMatch = fullText.match(/\+?\d{10,13}/g);
+
+  const intel = {};
+  if (upiMatch) intel.upiIds = [...new Set(upiMatch)];
+  if (urlMatch) intel.urls = [...new Set(urlMatch)];
+  if (phoneMatch) intel.phoneNumbers = [...new Set(phoneMatch)];
+
+  if (Object.keys(intel).length === 0) return null;
+
+  return {
+    ...intel,
+    riskLevel: intel.upiIds || intel.urls ? 'HIGH' : 'MEDIUM',
+    extractedAt: new Date().toISOString(),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// 2. Load agent.js if present, then resolve EACH function individually.
+//    If agent.js exports some but not all three functions, the missing
+//    ones fall back to mocks instead of crashing the whole module.
+// ---------------------------------------------------------------------------
+let realAgent = {};
 try {
-  ({ classifyScam, generateBaitResponse, extractThreatIntel } = require('./agent.js'));
-  console.log('[agent.js] Loaded Member 2\'s real AI agent module.');
+  realAgent = require('./agent.js');
+  console.log('[agent.js] File found — checking which functions are implemented...');
 } catch (err) {
-  console.warn('[agent.js] Not found or failed to load — using MOCK AI agent functions.');
+  console.warn('[agent.js] Not found or failed to load — using MOCK AI agent functions for everything.');
   console.warn(`[agent.js] Reason: ${err.message}`);
-
-  // Mock: naive classification based on keyword heuristics
-  classifyScam = async (text) => {
-    const lower = (text || '').toLowerCase();
-    const suspiciousKeywords = ['upi', 'urgent', 'arrest', 'otp', 'bank', 'kyc', 'lottery', 'prize'];
-    const hits = suspiciousKeywords.filter((k) => lower.includes(k));
-    return {
-      isScam: hits.length > 0,
-      confidence: Math.min(0.4 + hits.length * 0.15, 0.95),
-      matchedKeywords: hits,
-    };
-  };
-
-  // Mock: canned naive-victim bait reply
-  generateBaitResponse = async (history) => {
-    const lastMsg = Array.isArray(history) && history.length > 0
-      ? history[history.length - 1].message
-      : '';
-    return `[MOCK BAIT REPLY] Oh no, that sounds serious! I don't understand — can you tell me exactly how to pay? (echoing: "${lastMsg}")`;
-  };
-
-  // Mock: naive regex-based intel extraction
-  extractThreatIntel = async (history) => {
-    const fullText = Array.isArray(history)
-      ? history.map((h) => h.message).join(' ')
-      : String(history || '');
-
-    const upiMatch = fullText.match(/[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g);
-    const urlMatch = fullText.match(/https?:\/\/[^\s]+/g);
-    const phoneMatch = fullText.match(/\+?\d{10,13}/g);
-
-    const intel = {};
-    if (upiMatch) intel.upiIds = [...new Set(upiMatch)];
-    if (urlMatch) intel.urls = [...new Set(urlMatch)];
-    if (phoneMatch) intel.phoneNumbers = [...new Set(phoneMatch)];
-
-    if (Object.keys(intel).length === 0) return null;
-
-    return {
-      ...intel,
-      riskLevel: intel.upiIds || intel.urls ? 'HIGH' : 'MEDIUM',
-      extractedAt: new Date().toISOString(),
-    };
-  };
 }
 
+const classifyScam = typeof realAgent.classifyScam === 'function' ? realAgent.classifyScam : mockClassifyScam;
+console.log(`[agent.js] classifyScam: ${typeof realAgent.classifyScam === 'function' ? 'REAL (Member 2)' : 'MOCK'}`);
+
+const generateBaitResponse = typeof realAgent.generateBaitResponse === 'function' ? realAgent.generateBaitResponse : mockGenerateBaitResponse;
+console.log(`[agent.js] generateBaitResponse: ${typeof realAgent.generateBaitResponse === 'function' ? 'REAL (Member 2)' : 'MOCK'}`);
+
+const extractThreatIntel = typeof realAgent.extractThreatIntel === 'function' ? realAgent.extractThreatIntel : mockExtractThreatIntel;
+console.log(`[agent.js] extractThreatIntel: ${typeof realAgent.extractThreatIntel === 'function' ? 'REAL (Member 2)' : 'MOCK'}`);
+
 // ---------------------------------------------------------------------------
-// 2. Attempt to import Member 4's Inspector & Dossier modules.
+// 3. Attempt to import Member 4's Inspector & Dossier modules.
 //    Expected exports:
 //      inspector.js -> inspectUrl(url)
 //      dossier.js   -> generateCyberCrimeDossier(data)
@@ -117,7 +126,7 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Express + HTTP + Socket.io setup
+// 4. Express + HTTP + Socket.io setup
 // ---------------------------------------------------------------------------
 const app = express();
 const server = http.createServer(app);
@@ -135,13 +144,13 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
 // ---------------------------------------------------------------------------
-// 4. In-memory state
+// 5. In-memory state
 // ---------------------------------------------------------------------------
 const quarantineQueue = []; // full history of every message processed
 const extractedIntel = [];  // every piece of intel pulled from scammer chats
 
 // ---------------------------------------------------------------------------
-// 5. Socket.io connection lifecycle
+// 6. Socket.io connection lifecycle
 // ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
   console.log(`[socket.io] Client connected: ${socket.id}`);
@@ -152,7 +161,7 @@ io.on('connection', (socket) => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Routes
+// 7. Routes
 // ---------------------------------------------------------------------------
 
 // Health check
@@ -171,7 +180,7 @@ app.get('/', (req, res) => {
  *   4. Emit `ai-reply-generated`.
  *   5. Extract threat intel from the running conversation.
  *   6. If links are present, run them through Member 4's inspector.
- *   7. Emit `intel-extracted` if anything was found.
+ *   7. Emit `intel-extracted` (+ per-type `intel-found`, `threat-level`) if found.
  *   8. Respond with { success: true, queueId }.
  */
 app.post('/api/detonate-message', async (req, res) => {
@@ -254,7 +263,7 @@ app.post('/api/detonate-message', async (req, res) => {
       }
     }
 
-    // 8. Store + emit intel-extracted if we found anything
+    // 8. Store + emit intel events if we found anything
     if (intel && Object.keys(intel).length > 0) {
       const intelRecord = {
         intelId: crypto.randomUUID(),
@@ -264,11 +273,10 @@ app.post('/api/detonate-message', async (req, res) => {
       };
       extractedIntel.push(intelRecord);
 
-      // Existing contract — keep emitting this exactly as before (frontend already relies on it)
+      // Existing contract — full intel object, all fields together
       io.emit('intel-extracted', intelRecord);
 
-      // Also emit each item individually with a "type" tag, for teammates who prefer
-      // to key off type ('upi' | 'link' | 'phone' | 'bank') instead of array fields.
+      // Per-type events, for teammates who prefer keying off "type"
       if (Array.isArray(intel.upiIds)) {
         intel.upiIds.forEach((value) => io.emit('intel-found', { type: 'upi', value }));
       }
@@ -282,7 +290,7 @@ app.post('/api/detonate-message', async (req, res) => {
         intel.bankAccounts.forEach((value) => io.emit('intel-found', { type: 'bank', value }));
       }
 
-      // Separate threat-level event, as requested
+      // Separate threat-level event
       if (intel.riskLevel) {
         io.emit('threat-level', { level: intel.riskLevel });
       }
@@ -332,7 +340,7 @@ app.post('/api/generate-dossier', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. Start server
+// 8. Start server
 // ---------------------------------------------------------------------------
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
