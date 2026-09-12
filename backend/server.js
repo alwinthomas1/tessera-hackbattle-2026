@@ -263,7 +263,29 @@ app.post('/api/detonate-message', async (req, res) => {
         ...intel,
       };
       extractedIntel.push(intelRecord);
+
+      // Existing contract — keep emitting this exactly as before (frontend already relies on it)
       io.emit('intel-extracted', intelRecord);
+
+      // Also emit each item individually with a "type" tag, for teammates who prefer
+      // to key off type ('upi' | 'link' | 'phone' | 'bank') instead of array fields.
+      if (Array.isArray(intel.upiIds)) {
+        intel.upiIds.forEach((value) => io.emit('intel-found', { type: 'upi', value }));
+      }
+      if (Array.isArray(intel.urls)) {
+        intel.urls.forEach((value) => io.emit('intel-found', { type: 'link', value }));
+      }
+      if (Array.isArray(intel.phoneNumbers)) {
+        intel.phoneNumbers.forEach((value) => io.emit('intel-found', { type: 'phone', value }));
+      }
+      if (Array.isArray(intel.bankAccounts)) {
+        intel.bankAccounts.forEach((value) => io.emit('intel-found', { type: 'bank', value }));
+      }
+
+      // Separate threat-level event, as requested
+      if (intel.riskLevel) {
+        io.emit('threat-level', { level: intel.riskLevel });
+      }
     }
 
     // 9. Respond to the HTTP caller
@@ -310,7 +332,7 @@ app.post('/api/generate-dossier', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. Start servergit --version
+// 7. Start server
 // ---------------------------------------------------------------------------
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
