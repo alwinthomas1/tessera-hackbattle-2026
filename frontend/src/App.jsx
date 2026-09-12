@@ -5,7 +5,7 @@ import ThreatVault from './components/ThreatVault'
 import { useSocket } from './hooks/useSocket'
 
 function App() {
-  const { connected, messages, intel, baitStatus, detonateMessage } = useSocket()
+  const { connected, messages, intel, baitStatus, detonateMessage, threatLevel } = useSocket()
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
@@ -13,7 +13,7 @@ function App() {
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-4 p-4">
         <ScammerSimulator onSend={detonateMessage} />
         <DeceptionFeed messages={messages} baitStatus={baitStatus} />
-        <ThreatVault intel={intel} />
+        <ThreatVault intel={intel} threatLevel={threatLevel} />
       </main>
     </div>
   )

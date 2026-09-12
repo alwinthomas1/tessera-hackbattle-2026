@@ -7,7 +7,8 @@ export function useSocket() {
   const socketRef = useRef(null)
   const [connected, setConnected] = useState(false)
   const [messages, setMessages] = useState([])
-  const [intel, setIntel] = useState({ upi: [], links: [], phones: [] })
+  const [intel, setIntel] = useState({ upi: [], links: [], phones: [], banks: [] })
+  const [threatLevel, setThreatLevel] = useState(null)
   const [baitStatus, setBaitStatus] = useState('Idle')
 
   useEffect(() => {
@@ -17,20 +18,16 @@ export function useSocket() {
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))
 
-    // Backend sends the raw entry: { queueId, sender, message, direction, timestamp }
     socket.on('message-received', (payload) => {
       setMessages((prev) => [...prev, { sender: 'scammer', text: payload.message, timestamp: Date.now() }])
       setBaitStatus('Baiting Scammer for Financial Intel...')
     })
 
-    // Backend event name is "ai-reply-generated", payload is { reply, classification, queueId }
     socket.on('ai-reply-generated', (payload) => {
       setMessages((prev) => [...prev, { sender: 'ai', text: payload.reply, timestamp: Date.now() }])
       setBaitStatus('Idle')
     })
 
-    // Backend event name is "intel-extracted", payload shape:
-    // { intelId, sourceQueueId, sender, upiIds?, urls?, phoneNumbers?, riskLevel, extractedAt }
     socket.on('intel-extracted', (payload) => {
       setIntel((prev) => {
         const next = { ...prev }
@@ -43,14 +40,20 @@ export function useSocket() {
         if (Array.isArray(payload.phoneNumbers)) {
           next.phones = [...new Set([...prev.phones, ...payload.phoneNumbers])]
         }
+        if (Array.isArray(payload.bankAccounts)) {
+          next.banks = [...new Set([...prev.banks, ...payload.bankAccounts])]
+        }
         return next
       })
+
+      if (payload.riskLevel) {
+        setThreatLevel(payload.riskLevel)
+      }
     })
 
     return () => socket.disconnect()
   }, [])
 
-  // Backend expects { sender, message } in the POST body
   const detonateMessage = async (text, sender = '+919876543210') => {
     setBaitStatus('Detonating payload...')
     try {
@@ -68,5 +71,5 @@ export function useSocket() {
     }
   }
 
-  return { connected, messages, intel, baitStatus, detonateMessage }
+  return { connected, messages, intel, baitStatus, detonateMessage, threatLevel }
 }
