@@ -53,6 +53,7 @@ export function useSocket() {
   // Backend expects { sender, message } in the POST body
   const detonateMessage = async (text, sender = '+919876543210') => {
     setBaitStatus('Detonating payload...')
+    console.log('SENDING PAYLOAD:', { sender, message: text })
     try {
       const res = await fetch('http://localhost:5000/api/detonate-message', {
         method: 'POST',
