@@ -67,7 +67,44 @@ ${conversationHistory}
 
   return response.text.trim();
 }
+async function extractThreatIntel(conversationHistory) {
+  const prompt = `
+You are a cybersecurity threat-intelligence extraction agent.
+
+Analyze the following scam conversation and return ONLY valid JSON in exactly this format:
+
+{
+  "upiIds": [],
+  "phoneNumbers": [],
+  "bankAccounts": [],
+  "phishingUrls": [],
+  "threatLevel": "LOW",
+  "attackVector": ""
+}
+
+Rules:
+- Extract only indicators actually present in the conversation.
+- Do not invent missing values.
+- threatLevel must be one of: LOW, MEDIUM, HIGH, CRITICAL.
+- attackVector should briefly describe the scam technique.
+- Return arrays even when empty.
+
+Conversation:
+${conversationHistory}
+`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+    },
+  });
+
+  return JSON.parse(response.text);
+}
 module.exports = {
   classifyScam,
   generateBaitResponse,
+  extractThreatIntel,
 };
