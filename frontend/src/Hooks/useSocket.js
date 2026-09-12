@@ -17,33 +17,55 @@ export function useSocket() {
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))
 
+    // Backend sends the raw entry: { queueId, sender, message, direction, timestamp }
     socket.on('message-received', (payload) => {
-      setMessages((prev) => [...prev, { sender: 'scammer', text: payload.text, timestamp: Date.now() }])
+      setMessages((prev) => [...prev, { sender: 'scammer', text: payload.message, timestamp: Date.now() }])
       setBaitStatus('Baiting Scammer for Financial Intel...')
     })
 
-    socket.on('ai-reply', (payload) => {
-      setMessages((prev) => [...prev, { sender: 'ai', text: payload.text, timestamp: Date.now() }])
+    // Backend event name is "ai-reply-generated", payload is { reply, classification, queueId }
+    socket.on('ai-reply-generated', (payload) => {
+      setMessages((prev) => [...prev, { sender: 'ai', text: payload.reply, timestamp: Date.now() }])
+      setBaitStatus('Idle')
     })
 
-    socket.on('intel-found', (payload) => {
+    // Backend event name is "intel-extracted", payload shape:
+    // { intelId, sourceQueueId, sender, upiIds?, urls?, phoneNumbers?, riskLevel, extractedAt }
+    socket.on('intel-extracted', (payload) => {
       setIntel((prev) => {
-        const key = payload.type === 'upi' ? 'upi' : payload.type === 'link' ? 'links' : 'phones'
-        if (prev[key].includes(payload.value)) return prev
-        return { ...prev, [key]: [...prev[key], payload.value] }
+        const next = { ...prev }
+        if (Array.isArray(payload.upiIds)) {
+          next.upi = [...new Set([...prev.upi, ...payload.upiIds])]
+        }
+        if (Array.isArray(payload.urls)) {
+          next.links = [...new Set([...prev.links, ...payload.urls])]
+        }
+        if (Array.isArray(payload.phoneNumbers)) {
+          next.phones = [...new Set([...prev.phones, ...payload.phoneNumbers])]
+        }
+        return next
       })
     })
 
     return () => socket.disconnect()
   }, [])
 
-  const detonateMessage = async (text) => {
+  // Backend expects { sender, message } in the POST body
+  const detonateMessage = async (text, sender = '+919876543210') => {
     setBaitStatus('Detonating payload...')
-    await fetch('http://localhost:5000/api/detonate-message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    })
+    try {
+      const res = await fetch('http://localhost:5000/api/detonate-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender, message: text }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setBaitStatus(`Error: ${data.error || 'Unknown error'}`)
+      }
+    } catch (err) {
+      setBaitStatus(`Error: Failed to fetch. Is backend running on port 5000?`)
+    }
   }
 
   return { connected, messages, intel, baitStatus, detonateMessage }
